@@ -1,32 +1,92 @@
 from django.shortcuts import render,redirect
 from django.http  import HttpResponse,Http404,HttpResponseRedirect
+from django.http import JsonResponse
 from .models import Article,NewsLetterRecipients
 import datetime as dt
 from .forms import NewsLetterForm,NewArticleForm
 from .email import send_welcome_email
 from django.contrib.auth.decorators import login_required
-# Create your views here.
 
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from .models import  MoringaMerch
+from .serializer import MerchSerializer
+from rest_framework import status
+from .permissions import IsAdminOrReadOnly
+
+class MerchList(APIView):
+    permission_classes = (IsAdminOrReadOnly,)
+
+    def get(self, request, format=None):
+        all_merch = MoringaMerch.objects.all()
+        serializers = MerchSerializer(all_merch, many=True)
+        return Response(serializers.data)
+
+    
+    def post(self, request, format=None):
+        serializers = MerchSerializer(data=request.data)
+        if serializers.is_valid():
+            serializers.save()
+            return Response(serializers.data, status=status.HTTP_201_CREATED)
+        return Response(serializers.errors, status=status.HTTP_400_BAD_REQUEST)   
+
+class MerchDescription(APIView):
+    permission_classes = (IsAdminOrReadOnly,)
+    def get_merch(self, pk):
+        try:
+            return MoringaMerch.objects.get(pk=pk)
+        except MoringaMerch.DoesNotExist:
+            return Http404
+
+    def get(self, request, pk, format=None):
+        merch = self.get_merch(pk)
+        serializers = MerchSerializer(merch)
+        return Response(serializers.data)
+
+    def put(self, request, pk, format=None):
+        merch = self.get_merch(pk)
+        serializers = MerchSerializer(merch, request.data)
+        if serializers.is_valid():
+            serializers.save()
+            return Response(serializers.data)
+        else:
+            return Response(serializers.errors, status=status.HTTP_400_BAD_REQUEST) 
+    
+    def delete(self, request, pk, format=None):
+        merch = self.get_merch(pk)
+        merch.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+# Create your views here.
 def welcome(request):   
     return render(request, 'welcome.html')
 
 def news_of_day(request):
     date = dt.date.today()
     news = Article.todays_news()
-
-    if request.method == 'POST':
-        form = NewsLetterForm(request.POST)
-        if form.is_valid():
-            print('valid')
-            name = form.cleaned_data['your_name']
-            email = form.cleaned_data['email']
-            recipient = NewsLetterRecipients(name = name,email =email)
-            recipient.save()
-            send_welcome_email(name,email)
-            HttpResponseRedirect('news_of_day')
-    else:
-        form = NewsLetterForm()
+    form = NewsLetterForm()
+    # if request.method == 'POST':
+    #     form = NewsLetterForm(request.POST)
+    #     if form.is_valid():
+    #         print('valid')
+    #         name = form.cleaned_data['your_name']
+    #         email = form.cleaned_data['email']
+    #         recipient = NewsLetterRecipients(name = name,email =email)
+    #         recipient.save()
+    #         send_welcome_email(name,email)
+    #         HttpResponseRedirect('news_of_day')
+    # else:
+    #     form = NewsLetterForm()
     return render(request, 'all-news/today-news.html', {"date": date,"news":news,"letterForm":form})
+
+def newsletter(request):
+    name = request.POST.get('your_name')
+    email = request.POST.get('email')
+
+    recipient = NewsLetterRecipients(name=name, email=email)
+    recipient.save()
+    send_welcome_email(name, email)
+    data = {'success': 'You have been successfully added to mailing list'}
+    return JsonResponse(data)
 
 def convert_dates(dates):
     # Function that gets the weekday number for the date.
